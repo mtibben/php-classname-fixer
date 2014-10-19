@@ -11,7 +11,9 @@ It can be used to convert code to use [PHP namespaces](http://php.net/manual/en/
 So for example, if I have a class called `MyClass.php`
 ```php
 class OldVendor_OldNamespace_MyClass {
-    
+    public function getDate() {
+        return DateTime("2014-10-20");
+    }
 }
 ```
 
@@ -21,6 +23,10 @@ and I put that class in `src/NewVendor/NewNamespace/MyClass` and then run `php-c
 namespace NewVendor\NewNamespace;
 
 class MyClass {
-    
+    public function getDate() {
+        return \DateTime("2014-10-20");
+    }
 }
 ```
+
+In addition all references to the old classname found in the source directory are rewritten.
