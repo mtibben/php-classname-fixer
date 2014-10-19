@@ -99,7 +99,7 @@ func (p *phpfile) getUseAsClasses() (useAsClasses []string) {
 	return useAsClasses
 }
 
-func (p *phpfile) PathDoesntMatchClass() bool {
+func (p *phpfile) PathDoesntMatchClassname() bool {
 	return p.newClass != p.origClass
 }
 

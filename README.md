@@ -4,6 +4,8 @@
 
 It can be used to convert code to use [PHP namespaces](http://php.net/manual/en/language.namespaces.php) or rename classes.
 
+Note: `php-classname-fixer` uses regexes to rewrite code. For that reason, it is assumed that files use the [PSR-2](http://www.php-fig.org/psr/psr-2/) code style. It is recommended that your code has been formatted that way before using this tool.
+
 ## How it works
 
 `php-classname-fixer` searches a directory for php files. It builds a map of classnames, then determines the implied PSR-0 classname from the location of the files. It then renames classes to use the implied PSR-0 class name.
