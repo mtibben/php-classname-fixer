@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -17,7 +16,7 @@ func mustReadFile(path string) string {
 }
 
 func mustWriteFile(path, contents string) {
-	fmt.Println("Writing", path)
+	// fmt.Println("Writing", path)
 	err := os.MkdirAll(filepath.Dir(path), 0755)
 	if err != nil {
 		panic(err)

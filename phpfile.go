@@ -1,20 +1,17 @@
 package main
 
 import (
-	"path/filepath"
 	"regexp"
 	"strings"
 )
+
+type phpfiles map[string]*phpfile
 
 type classname string
 
 func (c classname) namespace() string {
 	parts := strings.Split(string(c), `\`)
 	ns := strings.Join(parts[1:len(parts)-1], `\`)
-
-	if ns == "" {
-		panic("Couldn't create new namespace")
-	}
 
 	return ns
 }
@@ -30,18 +27,15 @@ func (c classname) String() string {
 }
 
 type phpfile struct {
-	basepath    string
-	newbasepath string
-	path        string
-	contents    string
-	origClass   classname
-	class       classname
+	path      string
+	contents  string
+	origClass classname
+	newClass  classname
 }
 
-func newPhpFile(basepath, path string) *phpfile {
+func newPhpFile(path string) *phpfile {
 	return &phpfile{
-		basepath: basepath,
-		path:     path,
+		path: path,
 	}
 }
 
@@ -53,9 +47,9 @@ func (f *phpfile) Contents() string {
 	return f.contents
 }
 
-func (p *phpfile) namespacedPsrClassNameFromPath() string {
+func (p *phpfile) expectedClassNameFromPath() string {
 	path := p.path
-	startPos := len(p.basepath) - 1
+	startPos := len(basepath) - 1
 	endPos := len(path) - 4
 	path = path[startPos:endPos]
 	path = strings.Replace(path, "/", `\`, -1)
@@ -65,6 +59,14 @@ func (p *phpfile) namespacedPsrClassNameFromPath() string {
 
 func (p *phpfile) containsNamespace() bool {
 	return strings.Contains(p.Contents(), "\nnamespace ")
+}
+
+var namespaceRe = regexp.MustCompile(`\nnamespace\s+(\S+)\s*;`)
+
+func (p *phpfile) getNamespace() string {
+	matches := namespaceRe.FindStringSubmatch(p.Contents())
+
+	return matches[1]
 }
 
 var classRe = regexp.MustCompile(`\n\s*((abstract)?\s*(final)?\s*class|interface)\s+(\S+)`)
@@ -82,18 +84,25 @@ func (p *phpfile) getClasses() (classnames []string) {
 	return classnames
 }
 
-func (p *phpfile) Save() {
-	if p.newbasepath == "" {
-		mustWriteFile(p.path, p.Contents())
-	} else {
-		mustDeleteFile(p.path)
-		mustWriteFile(p.newPath(), p.Contents())
+var useasRe = regexp.MustCompile(`\nuse\s+\S+\s+as\s+(\S+)\s*;`)
+
+func (p *phpfile) getUseAsClasses() (useAsClasses []string) {
+	matches := useasRe.FindAllStringSubmatch(p.Contents(), 1)
+	if len(matches) == 0 {
+		return
 	}
 
+	for _, m := range matches {
+		useAsClasses = append(useAsClasses, m[len(m)-1])
+	}
+
+	return useAsClasses
 }
 
-func (p *phpfile) newPath() string {
-	return filepath.Clean(filepath.Join(
-		p.newbasepath,
-		strings.Replace(p.class.String(), `\`, `/`, -1)+".php"))
+func (p *phpfile) PathDoesntMatchClass() bool {
+	return p.newClass != p.origClass
+}
+
+func (p *phpfile) Save() {
+	mustWriteFile(p.path, p.Contents())
 }

@@ -30,20 +30,14 @@ func newPhpClassReplacer(basepath string, files phpfiles) *phpClassReplacer {
 	sortedReplacementKeys := sliceKeys(files)
 	sort.Sort(ByLength(sortedReplacementKeys))
 
-	// fmt.Println(strings.Join(sortedReplacementKeys, "\n"))
-	// os.Exit(1)
-
 	replacerArgs := []string{}
 	for _, k := range sortedReplacementKeys {
 		r := files[k]
 		replacerArgs = append(replacerArgs,
-			"use "+r.origClass.String(), "use "+r.class.String()[1:],
-			`\`+r.origClass.String(), r.class.String(),
-			r.origClass.String(), r.class.String())
-		// fmt.Println(r.origClass, " -> ", r.class)
+			"use "+r.origClass.String(), "use "+r.newClass.String()[1:],
+			`\`+r.origClass.String(), r.newClass.String(),
+			r.origClass.String(), r.newClass.String())
 	}
-
-	// os.Exit(1)
 
 	replacer.replacer = strings.NewReplacer(replacerArgs...)
 
@@ -52,7 +46,7 @@ func newPhpClassReplacer(basepath string, files phpfiles) *phpClassReplacer {
 
 func (p *phpClassReplacer) updateNamespace(f *phpfile) {
 
-	namespaceLine := "namespace " + f.class.namespace() + ";"
+	namespaceLine := "namespace " + f.newClass.namespace() + ";"
 
 	if f.containsNamespace() {
 		lines := strings.Split(f.Contents(), "\n")
@@ -85,32 +79,52 @@ func (p *phpClassReplacer) replaceClasses(f *phpfile) {
 	f.contents = p.replacer.Replace(f.Contents())
 }
 
-var re1 = regexp.MustCompile(`new ([A-Z])`)
+var re1 = regexp.MustCompile(`new\s+([A-Z][\w_]+)`)
 var re2 = regexp.MustCompile(`([^\\a-zA-Z])([A-Z][\w_]+)::`)
 
 func (p *phpClassReplacer) fixUnnamespacedClasses(f *phpfile) {
-	f.contents = re1.ReplaceAllString(f.Contents(), "new \\$1")
-	f.contents = re2.ReplaceAllString(f.Contents(), "$1\\$2::")
+	useAsClasses := f.getUseAsClasses()
+	uac := ""
+	if len(useAsClasses) > 0 {
+		uac = `(` + strings.Join(useAsClasses, "|") + `)`
+	}
+
+	f.contents = re1.ReplaceAllStringFunc(f.Contents(), func(s string) string {
+		if len(uac) > 0 {
+			re3 := regexp.MustCompile(`new\s+` + uac)
+			if re3.MatchString(s) {
+				return s
+			}
+		}
+
+		return re1.ReplaceAllString(s, "new \\$1")
+	})
+
+	f.contents = re2.ReplaceAllStringFunc(f.Contents(), func(s string) string {
+		if len(uac) > 0 {
+			re3 := regexp.MustCompile(`([^\\a-zA-Z])` + uac + `::`)
+			if re3.MatchString(s) {
+				return s
+			}
+		}
+
+		return re2.ReplaceAllString(s, "$1\\$2::")
+	})
+
 }
 
 // replaceOtherClasses causes the classname to become namespaced
 func (p *phpClassReplacer) fixNamespacedClassname(f *phpfile) {
-	ns := "class \\" + f.class.namespace() + `\`
+	ns := "class \\" + f.newClass.namespace() + `\`
 	f.contents = strings.Replace(f.Contents(), ns, "class ", -1)
 
-	ns = "interface \\" + f.class.namespace() + `\`
+	ns = "interface \\" + f.newClass.namespace() + `\`
 	f.contents = strings.Replace(f.Contents(), ns, "interface ", -1)
 }
 
-// remove the base namespace from classes
-// func (p *phpClassReplacer) replaceRedundantNs(f *phpfile) {
-// 	ns := `\` + f.newNamespace() + `\`
-// 	f.contents = strings.Replace(f.contents, ns, "", -1)
-// }
-
 func (p *phpClassReplacer) UpdateClassnames() {
 	for _, f := range p.files {
-		fmt.Println("Updating", f.path)
+		fmt.Print(".")
 		p.updateNamespace(f)
 		p.replaceClasses(f)
 		p.fixUnnamespacedClasses(f)

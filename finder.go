@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,32 +19,23 @@ func newPhpFinder(basepath string) *phpFinder {
 	}
 }
 
-func (p *phpFinder) extractClassFromFile(path string) {
-	f := newPhpFile(p.basepath, path)
+func (p *phpFinder) extractMetadataFromFile(path string) {
+	f := newPhpFile(path)
+	classnames := f.getClasses()
+	if len(classnames) == 0 {
+		fmt.Println("Warning: couldn't find class in ", path)
+		return
+	}
+	if len(classnames) > 1 {
+		fmt.Println("Warning: more than 1 class in ", path)
+	}
 	if f.containsNamespace() {
-		f.origClass = classname(f.namespacedPsrClassNameFromPath())
-		f.class = classname(f.origClass)
+		f.origClass = classname("\\" + f.getNamespace() + "\\" + classnames[0])
+		f.newClass = classname(f.expectedClassNameFromPath())
 
 	} else {
-
-		classnames := f.getClasses()
-		if len(classnames) == 0 {
-			fmt.Println("Warning: couldn't find class in ", path)
-			return
-		}
-		if len(classnames) > 1 {
-			fmt.Println("Warning: more than 1 class in ", path)
-		}
-
 		f.origClass = classname(classnames[0])
-		f.class = classname(f.namespacedPsrClassNameFromPath())
-
-		classparts := strings.Split(f.class.String()[1:], `\`)
-		expectedClass := strings.Join(classparts, `_`)
-
-		if expectedClass != f.origClass.String() {
-			fmt.Println("Warning: unexpected classname", f.origClass, "expected", expectedClass)
-		}
+		f.newClass = classname(f.expectedClassNameFromPath())
 	}
 
 	p.files[f.origClass.String()] = f
@@ -54,7 +46,12 @@ func (p *phpFinder) findPhpFiles(path string, info os.FileInfo, err error) error
 		return nil
 	}
 
-	p.extractClassFromFile(path)
+	p.extractMetadataFromFile(path)
 
 	return nil
+}
+func (p *phpFinder) find() phpfiles {
+	filepath.Walk(p.basepath, p.findPhpFiles)
+
+	return p.files
 }
