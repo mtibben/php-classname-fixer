@@ -30,7 +30,7 @@ func (p *phpFinder) extractMetadataFromFile(path string) {
 		fmt.Fprintln(os.Stderr, "Warning: more than 1 class in ", path)
 	}
 	if f.containsNamespace() {
-		f.origClass = classname("\\" + f.getNamespace() + "\\" + classnames[0])
+		f.origClass = classname(f.getNamespace() + "\\" + classnames[0])
 		f.newClass = classname(f.expectedClassNameFromPath())
 
 	} else {

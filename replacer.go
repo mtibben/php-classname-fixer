@@ -11,7 +11,8 @@ type phpClassReplacer struct {
 	basepath              string
 	sortedReplacementKeys []string
 	files                 phpfiles
-	replacer              *strings.Replacer
+	replacer1             *strings.Replacer
+	replacer2             *strings.Replacer
 }
 
 func sliceKeys(ss phpfiles) (s []string) {
@@ -30,16 +31,21 @@ func newPhpClassReplacer(basepath string, files phpfiles) *phpClassReplacer {
 	sortedReplacementKeys := sliceKeys(files)
 	sort.Sort(ByLength(sortedReplacementKeys))
 
-	replacerArgs := []string{}
+	replacer1Args := []string{}
+	replacer2Args := []string{}
 	for _, k := range sortedReplacementKeys {
 		r := files[k]
-		replacerArgs = append(replacerArgs,
+		replacer1Args = append(replacer1Args,
 			"use "+r.origClass.String(), "use "+r.newClass.String()[1:],
 			`\`+r.origClass.String(), r.newClass.String(),
-			r.origClass.String(), r.newClass.String())
+		)
+		replacer2Args = append(replacer2Args,
+			r.origClass.String(), r.newClass.String(),
+		)
 	}
 
-	replacer.replacer = strings.NewReplacer(replacerArgs...)
+	replacer.replacer1 = strings.NewReplacer(replacer1Args...)
+	replacer.replacer2 = strings.NewReplacer(replacer2Args...)
 
 	return replacer
 }
@@ -76,7 +82,11 @@ func (p *phpClassReplacer) updateNamespace(f *phpfile) {
 }
 
 func (p *phpClassReplacer) replaceClasses(f *phpfile) {
-	f.contents = p.replacer.Replace(f.Contents())
+	f.contents = p.replacer1.Replace(f.Contents())
+}
+
+func (p *phpClassReplacer) replaceUnnamespacedClasses(f *phpfile) {
+	f.contents = p.replacer2.Replace(f.Contents())
 }
 
 var re1 = regexp.MustCompile(`new\s+([A-Z][\w_]+)`)
@@ -125,9 +135,13 @@ func (p *phpClassReplacer) fixNamespacedClassname(f *phpfile) {
 func (p *phpClassReplacer) UpdateClassnames() {
 	for _, f := range p.files {
 		fmt.Print(".")
+		hasNs := f.containsNamespace()
 		p.updateNamespace(f)
 		p.replaceClasses(f)
-		p.fixUnnamespacedClasses(f)
+		if !hasNs {
+			p.replaceUnnamespacedClasses(f)
+			p.fixUnnamespacedClasses(f)
+		}
 		p.fixNamespacedClassname(f)
 		f.Save()
 	}
