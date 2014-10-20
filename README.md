@@ -14,7 +14,7 @@ So for example, if I have a PHP class file called `MyClass.php`
 ```php
 class OldVendor_OldNamespace_MyClass {
     public function getDate() {
-        return DateTime("2014-10-20");
+        return new DateTime("2014-10-20");
     }
 }
 ```
@@ -26,7 +26,7 @@ namespace NewVendor\NewNamespace;
 
 class MyClass {
     public function getDate() {
-        return \DateTime("2014-10-20");
+        return new \DateTime("2014-10-20");
     }
 }
 ```
