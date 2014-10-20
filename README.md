@@ -2,7 +2,7 @@
 
 `php-classname-fixer` is a tool to help rewrite PHP class names.
 
-It can be used to convert code to use [PHP namespaces](http://php.net/manual/en/language.namespaces.php) or rename classes.
+It can be used to convert code to use [PHP namespaces](http://php.net/manual/en/language.namespaces.php) or more generally to rename classes.
 
 You can install it with `go install github.com/mtibben/php-classname-fixer`.
 
