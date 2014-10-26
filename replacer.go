@@ -11,8 +11,11 @@ type phpClassReplacer struct {
 	basepath              string
 	sortedReplacementKeys []string
 	files                 phpfiles
+	replacer0             *strings.Replacer
 	replacer1             *strings.Replacer
 	replacer2             *strings.Replacer
+	replacer3             *strings.Replacer
+	origClasses           []string
 }
 
 func sliceKeys(ss phpfiles) (s []string) {
@@ -31,118 +34,213 @@ func newPhpClassReplacer(basepath string, files phpfiles) *phpClassReplacer {
 	sortedReplacementKeys := sliceKeys(files)
 	sort.Sort(ByLength(sortedReplacementKeys))
 
+	replacer0Args := []string{}
 	replacer1Args := []string{}
 	replacer2Args := []string{}
+	replacer3Args := []string{}
 	for _, k := range sortedReplacementKeys {
 		r := files[k]
-		replacer1Args = append(replacer1Args,
-			"use "+r.origClass.String(), "use "+r.newClass.String()[1:],
-			`\`+r.origClass.String(), r.newClass.String(),
-		)
-		replacer2Args = append(replacer2Args,
-			r.origClass.String(), r.newClass.String(),
-		)
+		if r.PathDoesntMatchClassname() {
+			replacer0Args = append(replacer0Args,
+				` \`+r.origClass.String(), ` \`+r.newClass.String(),
+			)
+
+			replacer1Args = append(replacer1Args,
+				r.origClass.String(), r.newClass.String(),
+			)
+
+			replacer2Args = append(replacer2Args,
+				`(`+r.origClass.String()+` $`, `(\`+r.newClass.String()+` $`,
+				` `+r.origClass.String()+` $`, ` \`+r.newClass.String()+` $`,
+				`'`+r.origClass.String()+`'`, `'\`+r.newClass.String()+`'`,
+				`\`+r.origClass.String(), `\`+r.newClass.String(),
+			)
+
+			replacer3Args = append(replacer3Args,
+				`\`+r.origClass.String(), `\`+r.newClass.String(),
+				r.origClass.String(), `\`+r.newClass.String(),
+			)
+		}
 	}
 
+	replacer.replacer0 = strings.NewReplacer(replacer0Args...)
 	replacer.replacer1 = strings.NewReplacer(replacer1Args...)
 	replacer.replacer2 = strings.NewReplacer(replacer2Args...)
+	replacer.replacer3 = strings.NewReplacer(replacer3Args...)
 
 	return replacer
 }
 
-func (p *phpClassReplacer) updateNamespace(f *phpfile) {
+func (p *phpClassReplacer) getReplacements() (map[string]string, []string) {
+	replacements := map[string]string{}
 
-	namespaceLine := "namespace " + f.newClass.namespace() + ";"
-
-	if f.containsNamespace() {
-		lines := strings.Split(f.Contents(), "\n")
-		newparts := []string{}
-		done := false
-		for _, l := range lines {
-			if !done && strings.HasPrefix(l, "namespace") {
-				newparts = append(newparts, namespaceLine)
-				done = true
-			} else {
-				newparts = append(newparts, l)
-			}
+	for _, v := range p.files {
+		if v.PathDoesntMatchClassname() {
+			c := strings.Trim(v.origClass.String(), "\\")
+			d := strings.Trim(v.newClass.String(), "\\")
+			replacements[c] = d
 		}
-
-		f.contents = strings.Join(newparts, "\n")
-	} else {
-		parts := strings.SplitAfterN(f.Contents(), "<?php\n", 2)
-
-		if len(parts) != 2 {
-			panic("Less parts than expected")
-		}
-
-		f.contents = parts[0] +
-			"\n" + namespaceLine + "\n" +
-			parts[1]
 	}
+	sortedReplacementKeys := sliceKeys2(replacements)
+	sort.Sort(ByLength(sortedReplacementKeys))
+
+	replacementStr := ""
+	for _, k := range sortedReplacementKeys {
+		replacementStr += fmt.Sprintf("%s %s\n", k, replacements[k])
+	}
+
+	return replacements, sortedReplacementKeys
 }
 
-func (p *phpClassReplacer) replaceClasses(f *phpfile) {
-	f.contents = p.replacer1.Replace(f.Contents())
+func (p *phpClassReplacer) namespaceLine(f *phpfile) string {
+	namespaceLine := "\nnamespace " + f.newClass.namespace() + ";"
+
+	return namespaceLine
 }
 
-func (p *phpClassReplacer) replaceUnnamespacedClasses(f *phpfile) {
-	f.contents = p.replacer2.Replace(f.Contents())
-}
+var reFindClassesWithNew = regexp.MustCompile(`new\s+([A-Z][\w_]+)`)
+var reFindClassesWithStaticCall = regexp.MustCompile(`([^\w_\\])([A-Z][\w_\\]+)::`)
+var reFindClassesWIthInstanceOf = regexp.MustCompile(`instanceof\s+([A-Z][\w_\\]+)`)
+var reFindClassesInFunctionSigs = regexp.MustCompile(`([\(,]\s*)([A-Z][\w_\\]+) \$`)
 
-var re1 = regexp.MustCompile(`new\s+([A-Z][\w_]+)`)
-var re2 = regexp.MustCompile(`([^\\a-zA-Z])([A-Z][\w_]+)::`)
+func (p *phpClassReplacer) fixTheRest(f *phpfile) {
+	ignoreClasses := f.getUseAsClasses()
 
-func (p *phpClassReplacer) fixUnnamespacedClasses(f *phpfile) {
-	useAsClasses := f.getUseAsClasses()
 	uac := ""
-	if len(useAsClasses) > 0 {
-		uac = `(` + strings.Join(useAsClasses, "|") + `)`
+	if len(ignoreClasses) > 0 {
+		uac = `(` + strings.Join(ignoreClasses, "|") + `)`
 	}
 
-	f.contents = re1.ReplaceAllStringFunc(f.Contents(), func(s string) string {
+	f.contents.therest = reFindClassesWithNew.ReplaceAllStringFunc(f.contents.therest, func(s string) string {
 		if len(uac) > 0 {
-			re3 := regexp.MustCompile(`new\s+` + uac)
-			if re3.MatchString(s) {
+			re4 := regexp.MustCompile(`new\s+` + uac)
+			if re4.MatchString(s) {
 				return s
 			}
 		}
 
-		return re1.ReplaceAllString(s, "new \\$1")
+		return reFindClassesWithNew.ReplaceAllString(s, "new \\$1")
 	})
 
-	f.contents = re2.ReplaceAllStringFunc(f.Contents(), func(s string) string {
+	f.contents.therest = reFindClassesWithStaticCall.ReplaceAllStringFunc(f.contents.therest, func(s string) string {
 		if len(uac) > 0 {
-			re3 := regexp.MustCompile(`([^\\a-zA-Z])` + uac + `::`)
-			if re3.MatchString(s) {
+			re4 := regexp.MustCompile(`([^\\a-zA-Z])` + uac + `::`)
+			if re4.MatchString(s) {
 				return s
 			}
 		}
 
-		return re2.ReplaceAllString(s, "$1\\$2::")
+		return reFindClassesWithStaticCall.ReplaceAllString(s, "$1\\$2::")
 	})
 
+	f.contents.therest = reFindClassesWIthInstanceOf.ReplaceAllStringFunc(f.contents.therest, func(s string) string {
+		if len(uac) > 0 {
+			re4 := regexp.MustCompile(`instanceof\s+` + uac)
+			if re4.MatchString(s) {
+				return s
+			}
+		}
+
+		return reFindClassesWIthInstanceOf.ReplaceAllString(s, "instanceof \\$1")
+	})
+
+	f.contents.therest = reFindClassesInFunctionSigs.ReplaceAllStringFunc(f.contents.therest, func(s string) string {
+		if len(uac) > 0 {
+			re4 := regexp.MustCompile(`[\( ]` + uac + ` \$`)
+			if re4.MatchString(s) {
+				return s
+			}
+		}
+
+		return reFindClassesInFunctionSigs.ReplaceAllString(s, "$1\\$2 $")
+	})
 }
 
-// replaceOtherClasses causes the classname to become namespaced
-func (p *phpClassReplacer) fixNamespacedClassname(f *phpfile) {
-	ns := "class \\" + f.newClass.namespace() + `\`
-	f.contents = strings.Replace(f.Contents(), ns, "class ", -1)
+func inArray(s string, ss []string) bool {
+	for _, a := range ss {
+		if a == s {
+			return true
+		}
+	}
 
-	ns = "interface \\" + f.newClass.namespace() + `\`
-	f.contents = strings.Replace(f.Contents(), ns, "interface ", -1)
+	return false
+}
+
+var reGetExtendClasses = regexp.MustCompile(`(?ms)([\w\\]+)`)
+
+func (p *phpClassReplacer) fixPostClass(f *phpfile) {
+	ignoreClasses := f.getUseAsClasses()
+	f.contents.postClass = p.replacer3.Replace(f.contents.postClass)
+	f.contents.postClass = reGetExtendClasses.ReplaceAllStringFunc(f.contents.postClass, func(s string) string {
+		if s == "extends" || s == "implements" || s[0] == '\\' {
+			return s
+		}
+
+		if inArray(s, ignoreClasses) {
+			return s
+		}
+
+		return `\` + s
+	})
+}
+
+var useasRe3 = regexp.MustCompile(`\nuse\s+(\S+)(\s+as\s+(\S+))?\s*\;`)
+
+type useAsLine struct {
+	useClass classname
+	asClass  classname
+}
+
+func (u *useAsLine) String() string {
+	if u.asClass == "" || u.useClass.class() == u.asClass.class() {
+		return fmt.Sprintf("\nuse %s;", u.useClass)
+	} else {
+		return fmt.Sprintf("\nuse %s as %s;", u.useClass, u.asClass.class())
+	}
+}
+
+func (p *phpClassReplacer) updatePostNs(t string, f *phpfile) string {
+	return useasRe3.ReplaceAllStringFunc(t, func(s string) string {
+
+		m := useasRe3.FindStringSubmatch(s)
+
+		useClass := p.replacer1.Replace(m[1])
+		asClass := m[1]
+		if m[3] != "" {
+			asClass = m[3]
+		}
+
+		l := useAsLine{classname(useClass), classname(asClass)}
+
+		return l.String()
+	})
+}
+
+var whitespaceInStaticCall = regexp.MustCompile(`(\S)\s+::(\S)`)
+
+func somePsr2Fixes(s string) string {
+	return whitespaceInStaticCall.ReplaceAllString(s, "$1::$2")
 }
 
 func (p *phpClassReplacer) UpdateClassnames() {
 	for _, f := range p.files {
 		fmt.Print(".")
-		hasNs := f.containsNamespace()
-		p.updateNamespace(f)
-		p.replaceClasses(f)
-		if !hasNs {
-			p.replaceUnnamespacedClasses(f)
-			p.fixUnnamespacedClasses(f)
+
+		alreadyIsNamespaced := f.containsNamespace()
+
+		f.contents.therest = somePsr2Fixes(f.contents.therest)
+		f.contents.ns = p.namespaceLine(f)
+		f.contents.postNs = p.updatePostNs(f.contents.postNs, f)
+
+		if !alreadyIsNamespaced {
+			p.fixPostClass(f)
+			p.fixTheRest(f)
 		}
-		p.fixNamespacedClassname(f)
+
+		f.contents.classname = f.newClass.class()
+		f.contents.postClass = p.replacer0.Replace(f.contents.postClass)
+		f.contents.therest = p.replacer2.Replace(f.contents.therest)
+
 		f.Save()
 	}
 }

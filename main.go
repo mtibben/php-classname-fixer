@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 )
 
 var basepath string
+var outputFile string
 var write bool
 
 func init() {
@@ -17,6 +20,7 @@ func init() {
 		flag.PrintDefaults()
 	}
 	flag.BoolVar(&write, "w", false, "write - saves changes to files")
+	flag.StringVar(&outputFile, "o", "", "output class replacements to file")
 	flag.Parse()
 
 	basepath, _ = filepath.Abs(flag.Arg(0))
@@ -29,11 +33,26 @@ func main() {
 	files := finder.Find()
 
 	classCount := 0
-	for k, v := range files {
+	replacements := map[string]string{}
+	for _, v := range files {
 		if v.PathDoesntMatchClassname() {
-			fmt.Printf("   %s -> %s\n", k, v.newClass.String())
+			c := strings.Trim(v.origClass.String(), "\\")
+			d := strings.Trim(v.newClass.String(), "\\")
+			fmt.Printf("   %s -> %s\n", c, d)
+			replacements[c] = d
 			classCount++
 		}
+	}
+	sortedReplacementKeys := sliceKeys2(replacements)
+	sort.Sort(ByLength(sortedReplacementKeys))
+
+	replacementStr := ""
+	for _, k := range sortedReplacementKeys {
+		replacementStr += fmt.Sprintf("%s %s\n", k, replacements[k])
+	}
+
+	if outputFile != "" {
+		mustWriteFile(outputFile, replacementStr)
 	}
 
 	if !write {
@@ -47,4 +66,11 @@ func main() {
 		replacer.UpdateClassnames()
 		fmt.Print("\n")
 	}
+}
+
+func sliceKeys2(ss map[string]string) (s []string) {
+	for k, _ := range ss {
+		s = append(s, k)
+	}
+	return
 }
